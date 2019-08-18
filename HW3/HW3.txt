@@ -1,0 +1,89 @@
+1   ------------------------------
+
+SELECT [PersonID],FullName
+FROM [WideWorldImporters].[Application].[People]
+WHERE IsSalesperson = 1 
+	AND [PersonID] NOT IN (SELECT SalespersonPersonID	FROM [WideWorldImporters].[Sales].[Orders])
+
+2   -----------------------------
+
+
+SELECT * FROM [WideWorldImporters].[Warehouse].[StockItems] 
+WHERE UnitPrice = (SELECT MIN (UnitPrice) FROM [WideWorldImporters].[Warehouse].[StockItems])
+
+SELECT * FROM [WideWorldImporters].[Warehouse].[StockItems]
+WHERE UnitPrice = (SELECT TOP(1) UnitPrice FROM [WideWorldImporters].[Warehouse].[StockItems] ORDER BY UnitPrice ASC)
+
+
+3 -------------------------------
+
+-- option 1
+
+SELECT C.CustomerName, CT.TransactionAmount
+FROM [Sales].[Customers] AS C
+JOIN [Sales].[CustomerTransactions] AS CT ON C.[CustomerID] = CT.[CustomerID]
+WHERE CT.TransactionAmount IN (SELECT TOP (5) TransactionAmount
+FROM [WideWorldImporters].[Sales].[CustomerTransactions]
+ORDER BY TransactionAmount DESC)
+
+-- option 2
+
+SELECT (SELECT CustomerName FROM [Sales].[Customers] WHERE CustomerID = CT.[CustomerID]), CT.TransactionAmount
+FROM [Sales].[CustomerTransactions] AS CT
+WHERE CT.TransactionAmount IN (SELECT TOP (5) TransactionAmount FROM [WideWorldImporters].[Sales].[CustomerTransactions]
+ORDER BY TransactionAmount DESC)
+
+-- option 3 CTE
+
+;WITH FIVE_T AS (SELECT TOP (5) TransactionAmount FROM [WideWorldImporters].[Sales].[CustomerTransactions]
+ORDER BY TransactionAmount DESC)
+
+SELECT 
+
+(SELECT CustomerName FROM [Sales].[Customers] WHERE CustomerID = CT.[CustomerID]) AS Customer ,TransactionAmount
+FROM [Sales].[CustomerTransactions] AS CT
+WHERE CT.TransactionAmount IN (SELECT * FROM FIVE_T);
+
+
+4 -------------------------------
+
+
+
+;WITH TOP_Price (stockitemsID) AS (SELECT TOP (3) [StockItemID]
+FROM [WideWorldImporters].[Warehouse].[StockItems]
+ORDER BY UnitPrice desc)
+
+SELECT Ci.CityID, Ci.CityName, Ord.PickedByPersonID, P.FullName
+FROM [Sales].[Orders] AS Ord
+JOIN [Application].[People] AS P ON Ord.PickedByPersonID = P.PersonID 
+JOIN [Sales].[Customers] AS Cus ON Ord.CustomerID = Cus.CustomerID
+JOIN [Application].[Cities] AS Ci ON Cus.DeliveryCityID = Ci.CityID 
+
+WHERE Ord.OrderID IN (SELECT [OrderID] FROM [Sales].[OrderLines]
+WHERE StockItemID = ANY (SELECT * FROM TOP_Price))
+
+
+
+5 -------------------------------
+
+
+Исходный запрос выводит ID счетов заказов, дату заказа, продавца, общая сумма которых больше 27000
+
+
+SELECT Invoices.InvoiceID, Invoices.InvoiceDate,
+(SELECT People.FullName 
+	FROM Application.People 
+	WHERE People.PersonID = Invoices.SalespersonPersonID) AS SalesPersonName ,SalesTotals.TotalSumm AS TotalSummByInvoice,
+	(SELECT SUM(OrderLines.PickedQuantity*OrderLines.UnitPrice) 
+FROM Sales.OrderLines 
+WHERE OrderLines.OrderId = (SELECT Orders.OrderId FROM Sales.Orders WHERE Orders.PickingCompletedWhen IS NOT NULL 
+	AND Orders.OrderId = Invoices.OrderId)) AS TotalSummForPickedItems
+FROM Sales.Invoices 
+	JOIN (SELECT InvoiceId, SUM(Quantity*UnitPrice) AS TotalSumm FROM Sales.InvoiceLines
+GROUP BY InvoiceId HAVING SUM(Quantity*UnitPrice) > 27000) AS SalesTotals ON Invoices.InvoiceID = SalesTotals.InvoiceID
+ORDER BY TotalSumm DESC
+
+
+
+
+
